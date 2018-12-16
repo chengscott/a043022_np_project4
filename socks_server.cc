@@ -96,14 +96,14 @@ int main(int argc, char **argv) {
         sprintf(dst_ip, "%u.%u.%u.%u", buffer[4], buffer[5], buffer[6],
                 buffer[7]);
         DST_IP = std::string(dst_ip);
-        USER_ID = (char *) buffer + 8;
+        USER_ID = (char *)buffer + 8;
         DOMAIN_NAME = USER_ID + strlen(USER_ID) + 1;
     } else
         valid = false;
     // check request
     if (VN != 4) valid = false;
     if (CD != 1 && CD != 2) valid = false;
-    if (valid) {
+    if (valid && CD == 1) {
         struct hostent *he;
         if (DST_IP.substr(0, 6) == "0.0.0.")
             he = gethostbyname(DOMAIN_NAME);
@@ -131,31 +131,45 @@ int main(int argc, char **argv) {
               << "<Reply>: " << accept_info << std::endl
               << std::endl;
     // write reply
-    buffer[0] = (unsigned char)0;
+    buffer[0] = 0;
     // TODO: check firewall
     if (!valid) {
-        buffer[1] = (unsigned char)91;
+        buffer[1] = 91;
         write(csock, buffer, 8);
         close(csock);
     } else if (CD == 1) {
-        // CONNECT
-        buffer[1] = (unsigned char)90;
-        write(csock, buffer, 8);
-        // relay
+        // connect
         int rsock = socket(AF_INET, SOCK_STREAM, 0);
         connect(rsock, (struct sockaddr *)&raddr, sizeof(raddr));
+        // reply
+        buffer[1] = 90;
+        write(csock, buffer, 8);
+        // relay
         relay(csock, rsock);
     } else if (CD == 2) {
-        // BIND
-        buffer[1] = (unsigned char)90;
-        unsigned short port = 0;
+        // bind
+        ssock = socket(AF_INET, SOCK_STREAM, 0);
+        saddr.sin_family = AF_INET;
+        saddr.sin_addr.s_addr = htonl(INADDR_ANY);
+        saddr.sin_port = htons(0);
+        bind(ssock, (struct sockaddr *)&saddr, sizeof(saddr));
+        listen(ssock, 5);
+        socklen_t slen = sizeof(saddr);
+        getsockname(ssock, (struct sockaddr *)&saddr, &slen);
+        // reply
+        buffer[1] = 90;
+        unsigned short port = ntohs(saddr.sin_port);
         buffer[2] = port / 256;
         buffer[3] = port % 256;
         buffer[4] = buffer[5] = buffer[6] = buffer[7] = 0;
         write(csock, buffer, 8);
+        // accept
+        socklen_t rlen = sizeof(raddr);
+        int rsock = accept(ssock, (struct sockaddr *)&raddr, &rlen);
+        close(ssock);
+        write(csock, buffer, 8);
         // relay
-        int rsock = socket(AF_INET, SOCK_STREAM, 0);
-        connect(rsock, (struct sockaddr *)&raddr, sizeof(raddr));
+        relay(csock, rsock);
     }
     return 0;
 }
