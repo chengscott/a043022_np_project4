@@ -8,6 +8,7 @@
 #include <csignal>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
 #include <iostream>
 #include <string>
 #define BUFFER_SIZE 64000
@@ -39,6 +40,43 @@ void relay(int csock, int rsock) {
         recv_and_send(&rfds, csock, rsock);
         recv_and_send(&rfds, rsock, csock);
     }
+}
+
+bool is_firewall_allow(int cd, std::string client_ip) {
+    std::ifstream file;
+    file.open("socks.conf");
+    const char cmd = (cd == 1 ? 'c' : (cd == 2 ? 'b' : 'x'));
+    char c, ip[16];
+    if (file.is_open()) {
+        std::string line;
+        while (std::getline(file, line)) {
+            sscanf(line.c_str(), "%*s %c %s %*s", &c, ip);
+            if (c != cmd) continue;
+            bool pass = true;
+            const size_t sz = client_ip.length();
+            size_t i = 0, j = 0;
+            while (i < sz) {
+                while (ip[j] != '\0' && client_ip[i] == ip[j]) ++i, ++j;
+                if (ip[j] == '\0') {
+                    if (i != sz) pass = false;
+                    break;
+                }
+                if (ip[j] == '*') {
+                    ++j;
+                    while (client_ip[i] != '.' && i < sz) ++i;
+                } else {
+                    pass = false;
+                    break;
+                }
+            }
+            if (pass) {
+                file.close();
+                return true;
+            }
+        }
+    }
+    file.close();
+    return false;
 }
 
 void reaper(int sig) {
@@ -103,6 +141,9 @@ int main(int argc, char **argv) {
     // check request
     if (VN != 4) valid = false;
     if (CD != 1 && CD != 2) valid = false;
+    char cip[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &caddr.sin_addr, cip, INET_ADDRSTRLEN);
+    if (!is_firewall_allow(CD, std::string(cip))) valid = false;
     if (valid && CD == 1) {
         struct hostent *he;
         if (DST_IP.substr(0, 6) == "0.0.0.")
@@ -118,8 +159,6 @@ int main(int argc, char **argv) {
         }
     }
     // print info
-    char cip[INET_ADDRSTRLEN];
-    inet_ntop(AF_INET, &caddr.sin_addr, cip, INET_ADDRSTRLEN);
     std::string command_info = (CD == 1 ? "CONNECT" : (CD == 2 ? "BIND" : "")),
                 accept_info = (valid ? "Accept" : "Reject");
     std::cout << "<S_IP>: " << std::string(cip) << std::endl
@@ -132,7 +171,6 @@ int main(int argc, char **argv) {
               << std::endl;
     // write reply
     buffer[0] = 0;
-    // TODO: check firewall
     if (!valid) {
         buffer[1] = 91;
         write(csock, buffer, 8);
