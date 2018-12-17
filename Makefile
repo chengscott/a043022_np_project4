@@ -1,8 +1,8 @@
-CXX=g++
+CXX=clang++
 CXXFLAGS=-std=c++11 -Wall -pedantic
-BOOST_FLAGS=-I/usr/local/include -L/usr/local/lib -pthread -lboost_system
+BOOST_FLAGS=-I/usr/local/include -L/usr/local/lib -pthread -lboost_system -lboost_regex
 
-all: socks_server
+all: socks_server hw4.cgi
 
 socks_server: socks_server.cc
 	$(CXX) $? -o $@ $(CXXFLAGS)

@@ -84,7 +84,7 @@ int main(int argc, char **argv) {
     // read request
     ssize_t sz = read(csock, buffer, BUFFER_SIZE);
     bool valid = true;
-    unsigned char VN = 0, CD;
+    unsigned char VN = 0, CD = 0;
     unsigned short DST_PORT;
     std::string DST_IP;
     char *USER_ID = nullptr, *DOMAIN_NAME = nullptr;
