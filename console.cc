@@ -76,15 +76,18 @@ class Client {
     }
 
     void receive() {
-        boost::asio::async_read_until(
-            socket_, buffer_, boost::regex("^% "),
+        memset(buf_, 0, 4096);
+        socket_.async_read_some(
+            boost::asio::buffer(buf_, 4096),
             [this](boost::system::error_code ec, size_t length) {
-                std::string res((std::istreambuf_iterator<char>(&buffer_)),
-                                std::istreambuf_iterator<char>());
+                std::string res(buf_);
                 output_shell(res);
-                if (!ec)
-                    send();
-                else
+                if (!ec) {
+                    if (res.find("% ") == std::string::npos)
+                        receive();
+                    else
+                        send();
+                } else
                     close();
             });
     }
@@ -159,9 +162,10 @@ class Client {
     tcp::resolver resolv_;
     tcp::socket socket_;
     boost::asio::streambuf buffer_;
+    char buf_[4096];
 };
 
-void parse_query(Client (&client)[5]) {
+bool parse_query(Client (&client)[5]) {
     const std::string query = std::string(getenv("QUERY_STRING"));
     std::string sh, sp;
     std::regex pattern("&?([^=]+)=([^&]+)");
@@ -191,9 +195,10 @@ void parse_query(Client (&client)[5]) {
             }
         }
     }
+    return !sh.empty();
 }
 
-void init_console(const Client (&client)[5]) {
+void init_console(const Client (&client)[5], bool has_proxy) {
     std::cout << "Content-type: text/html\r\n\r\n";
     const std::string html_front = R"~~~(
 <!DOCTYPE html>
@@ -242,12 +247,15 @@ void init_console(const Client (&client)[5]) {
     )~~~";
     std::string table = "<thead><tr>";
     for (const Client& s : client)
-        if (!s.dest_host.empty())
+        if (!has_proxy && !s.host.empty())
+            table += R"(<th scope="col">)" + s.host + ':' + s.port + "</th>";
+        else if (has_proxy && !s.dest_host.empty())
             table += R"(<th scope="col">)" + s.dest_host + ':' + s.dest_port +
                      "</th>";
     table += "</tr></thead><tbody><tr>";
     for (const Client& s : client)
-        if (!s.dest_host.empty())
+        if ((!has_proxy && !s.host.empty()) ||
+            (has_proxy && !s.dest_host.empty()))
             table += R"(<td><pre id=")" + s.session +
                      R"(" class="mb-0"></pre></td>)";
     table += "</tr></tbody>";
@@ -258,8 +266,8 @@ void init_console(const Client (&client)[5]) {
 int main(int argc, char** argv) {
     Client client[5];
     for (size_t i = 0; i < 5; ++i) client[i].session = "s" + std::to_string(i);
-    parse_query(client);
-    init_console(client);
+    bool has_proxy = parse_query(client);
+    init_console(client, has_proxy);
     for (Client& c : client) c.connect();
     ioservice.run();
     return 0;
