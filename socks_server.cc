@@ -143,7 +143,6 @@ int main(int argc, char **argv) {
     if (CD != 1 && CD != 2) valid = false;
     char cip[INET_ADDRSTRLEN];
     inet_ntop(AF_INET, &caddr.sin_addr, cip, INET_ADDRSTRLEN);
-    if (!is_firewall_allow(CD, std::string(cip))) valid = false;
     if (valid && CD == 1) {
         struct hostent *he;
         if (DST_IP.substr(0, 6) == "0.0.0.")
@@ -153,11 +152,15 @@ int main(int argc, char **argv) {
         if (he == nullptr) {
             valid = false;
         } else {
+            char buf[INET_ADDRSTRLEN];
+            inet_ntop(AF_INET, he->h_addr, buf, sizeof(buf));
+            DST_IP = std::string(buf);
             raddr.sin_family = AF_INET;
             raddr.sin_addr = *((struct in_addr *)he->h_addr);
             raddr.sin_port = htons(DST_PORT);
         }
     }
+    if (!is_firewall_allow(CD, DST_IP)) valid = false;
     // print info
     std::string command_info = (CD == 1 ? "CONNECT" : (CD == 2 ? "BIND" : "")),
                 accept_info = (valid ? "Accept" : "Reject");
